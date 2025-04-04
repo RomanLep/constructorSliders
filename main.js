@@ -1,14 +1,15 @@
 class Slider {
-  constructor(
-    container,
-    arrImgs,
-    sizeSlider,
-    margin,
-    clickToSlide,
-    progressDots,
-    bgColor
-  ) {
-    this.container = container;
+  #currentIndex = 0;
+
+  constructor(container, option) {
+    const { arrImgs, sizeSlider, margin, clickToSlide, progressDots, bgColor } =
+      option;
+
+    this.container =
+      typeof container === "string"
+        ? document.querySelector(container)
+        : container;
+
     this.arrImgs = arrImgs;
     this.heightSlider = sizeSlider[0];
     this.widthSlider = sizeSlider[1];
@@ -17,11 +18,37 @@ class Slider {
     this.progressDots = progressDots.toUpperCase();
     this.bgAgreement = bgColor[0].toUpperCase();
     this.bgColor = bgColor[1];
+
+    this.isDragging = false;
+    this.startPos = 0;
+    this.currentTranslate = 0;
+    this.prevTranslate = 0;
+    this.animationId = 0;
+    this.currentIndex = 0;
+    this.dragSpeed = 1;
+    this.sliderTrack = null;
+  }
+
+  init() {
+    // Устанавливаем начальное положение
+    this.setPositionByIndex(0)
+
+    // Добавляем события
+    this.addEventListeners();
   }
 
   getImg(containerSlider) {
     const containerImg = document.createElement("div");
     containerImg.id = "container-img";
+
+    Object.assign(containerImg.style, {
+      height: this.heightSlider + "px",
+      width: this.widthSlider + "px",
+      display: "flex",
+      overflow: "hidden",
+      transition: "transform 0.3s ease",
+      userSelect: "none",
+    });
 
     for (let i = 0; i < this.arrImgs.length; i++) {
       const img = document.createElement("img");
@@ -30,8 +57,7 @@ class Slider {
       img.id = `imgSlider-${i}`;
 
       Object.assign(img.style, {
-        height: this.heightSlider + "px",
-        width: this.widthSlider + "px",
+        minWidth: "100%",
         objectFit: "cover",
         borderRadius: "1em",
       });
@@ -46,16 +72,7 @@ class Slider {
     }
 
     containerSlider.append(containerImg);
-    this.hideImg();
-  }
-
-  hideImg() {
-    const arrImgsLengths = this.arrImgs.length;
-
-    for (let i = 0; i < arrImgsLengths; i++) {
-      const img = document.querySelector(`#imgSlider-${i}`);
-      img.style.display = "none";
-    }
+    this.sliderTrack = containerImg;
   }
 
   openImg() {
@@ -64,37 +81,161 @@ class Slider {
     const btnNextSlide = document.querySelector("#btnNextSlide");
     const arrImgsLengths = this.arrImgs.length;
 
-    let currentIndex = 0;
-
-    this.showSlide(currentIndex);
+    this.showSlide(this.#currentIndex);
 
     if (this.clickToSlide === "Y") {
-      if (this.arrImgs.length <= 1) return;
-      containerImg.addEventListener("click", () => {
-        currentIndex = (currentIndex + 1) % arrImgsLengths;
-        this.showSlide(currentIndex);
+      containerImg.addEventListener("click", (event) => {
+        // Не обрабатываем клик, если было перетаскивание
+        if (this.isDragging) {
+          this.isDragging = false;
+          return;
+        }
+
+        const { width, x } = containerImg.getBoundingClientRect();
+        const { clientX } = event;
+
+        if (clientX - x <= width / 2) {
+          this.#currentIndex =
+            (this.#currentIndex - 1 + arrImgsLengths) % arrImgsLengths;
+        } else {
+          this.#currentIndex = (this.#currentIndex + 1) % arrImgsLengths;
+        }
+
+        this.showSlide(this.#currentIndex);
+        this.setPositionByIndex(this.#currentIndex); // Добавьте эту строку
       });
     }
 
     btnPrevSlide.addEventListener("click", () => {
-      currentIndex = (currentIndex - 1 + arrImgsLengths) % arrImgsLengths;
-      this.showSlide(currentIndex);
+      this.#currentIndex =
+        (this.#currentIndex - 1 + arrImgsLengths) % arrImgsLengths;
+      this.showSlide(this.#currentIndex);
     });
 
     btnNextSlide.addEventListener("click", () => {
-      currentIndex = (currentIndex + 1) % arrImgsLengths;
-      this.showSlide(currentIndex);
+      this.#currentIndex = (this.#currentIndex + 1) % arrImgsLengths;
+      this.showSlide(this.#currentIndex);
     });
   }
 
-  showSlide(index) {
-    for (let i = 0; i < this.arrImgs.length; i++) {
-      const img = document.querySelector(`#imgSlider-${i}`);
-      img.style.display = "none";
+  addEventListeners() {
+    this.container.addEventListener("mousedown", this.startDrag.bind(this));
+    this.container.addEventListener("mousemove", this.drag.bind(this));
+    this.container.addEventListener("mouseup", this.endDrag.bind(this));
+    this.container.addEventListener("mouseleave", this.endDrag.bind(this));
+
+    this.container.addEventListener("touchstart", this.startDrag.bind(this));
+    this.container.addEventListener("touchmove", this.drag.bind(this));
+    this.container.addEventListener("touchend", this.endDrag.bind(this));
+
+    this.container.addEventListener("selectstart", (e) => e.preventDefault());
+  }
+
+  startDrag(e) {
+    if (e.type === "touchstart") {
+      this.startPos = e.touches[0].clientX;
+    } else {
+      this.startPos = e.clientX;
     }
 
-    const currentImg = document.querySelector(`#imgSlider-${index}`);
-    currentImg.style.display = "block";
+    this.isDragging = true;
+    this.container.classList.add("grabbing");
+
+    // Запускаем анимацию
+    this.animationId = requestAnimationFrame(this.animation.bind(this));
+  }
+
+  drag(e) {
+    if (!this.isDragging) return;
+    e.preventDefault();
+
+    const currentPosition =
+      e.type === "touchmove" ? e.touches[0].clientX : e.clientX;
+
+    const diff = currentPosition - this.startPos;
+    this.currentTranslate = this.prevTranslate + diff * this.dragSpeed;
+  }
+
+  endDrag() {
+    if (!this.isDragging) return;
+
+    this.isDragging = false;
+    this.container.classList.remove("grabbing");
+    cancelAnimationFrame(this.animationId);
+
+    // Обновляем предыдущее положение
+    this.prevTranslate = this.currentTranslate;
+
+    // Вычисляем ближайший слайд
+    this.updateIndex();
+
+    // Плавно переходим к ближайшему слайду
+    this.setPositionByIndex(this.currentIndex);
+
+    this.#currentIndex = this.currentIndex;
+    this.showSlide(this.currentIndex);
+  }
+
+  animation() {
+    this.setSliderPosition();
+
+    if (this.isDragging) {
+      this.animationId = requestAnimationFrame(this.animation.bind(this));
+    }
+  }
+
+  setSliderPosition() {
+    if (this.sliderTrack) {
+      this.sliderTrack.style.transform = `translateX(${this.currentTranslate}px)`;
+    }
+  }
+
+  updateIndex() {
+    const item = document.querySelector("#imgSlider-0");
+    if (!item) return;
+
+    const itemWidth = item.offsetWidth + this.margin; // Используем this.margin
+    const draggedSlides = Math.round(-this.currentTranslate / itemWidth);
+
+    this.currentIndex = Math.min(
+      Math.max(0, draggedSlides),
+      this.arrImgs.length - 1
+    );
+    this.#currentIndex = this.currentIndex; // Синхронизируем private и public index
+  }
+
+  setPositionByIndex(index) {
+    const item = document.querySelector("#imgSlider-0");
+    const itemWidth = item.offsetWidth + 20; // + margin
+
+    this.currentTranslate = this.prevTranslate = -index * itemWidth;
+
+    this.currentIndex = index;
+    this.setSliderPosition();
+  }
+
+  next() {
+    if (this.currentIndex < this.arrImgs.length - 1) {
+      this.currentIndex++;
+      this.setPositionByIndex(this.currentIndex);
+    }
+  }
+
+  prev() {
+    if (this.currentIndex > 0) {
+      this.currentIndex--;
+      this.setPositionByIndex(this.currentIndex);
+    }
+  }
+
+  showSlide(index) {
+    const container = document.querySelector("#container-img");
+    const offset = -index * 100;
+    container.style.transform = `translateX(${offset}%)`;
+
+    // Обновите индексы
+    this.#currentIndex = index;
+    this.currentIndex = index;
 
     if (this.progressDots === "Y") {
       this.activeDot(index);
@@ -151,20 +292,32 @@ class Slider {
   renderDots(containerSlider) {
     const containerDots = document.createElement("ul");
     containerDots.id = "container-dots";
+    const widthDot = "10px";
+    const heightDot = "10px";
 
     for (let i = 0; i < this.arrImgs.length; i++) {
       const dot = document.createElement("li");
 
       Object.assign(dot.style, {
         listStyleType: "none",
-        width: 8 + "px",
-        height: 8 + "px",
+        width: widthDot,
+        height: heightDot,
         backgroundColor: "#fff",
         borderRadius: "2em",
         transition: "background-color 0.3s ease",
+        transition: "width 0.3s ease",
+        cursor: "pointer",
       });
 
       containerDots.append(dot);
+
+      dot.addEventListener("click", () => {
+        if (this.#currentIndex === i) {
+          return;
+        }
+
+        this.showSlide(i);
+      });
     }
 
     Object.assign(containerDots.style, {
@@ -188,14 +341,16 @@ class Slider {
 
   activeDot(index) {
     const dots = document.querySelectorAll("#container-dots li");
+
     dots.forEach((dot, i) => {
       dot.style.backgroundColor =
         i === index ? "#fff" : "rgba(255, 255, 255, 0.5)";
+      dot.style.width = i === index ? "20px" : "10px";
     });
   }
 
   createSlider() {
-    const slider = document.querySelector(`${this.container}`);
+    const slider = this.container;
 
     if (this.progressDots === "Y") {
       slider.style.position = "relative";
@@ -219,8 +374,8 @@ class Slider {
 
     this.getImg(slider);
     this.renderButtons(slider);
-    this.hideImg();
     this.openImg();
+    this.init();
 
     if (this.arrImgs.length <= 1) {
       return;
@@ -248,19 +403,22 @@ class Slider {
 цветом, который вы указали, если вам это не нужно то укажите ['N', '']
 */
 
-new Slider(
-  ".slider",
-  [
-    "./img/catOnBed.jpg",
-    "./img/catOnBlanket.jpg",
-    "./img/catOnBlanket2.jpg",
-    "./img/catInBag.jpg",
-    "./img/catOnCarpet.jpg",
-    "./img/catOnFloor.jpg",
-  ],
-  [300, 500],
-  16,
-  "y",
-  "y",
-  ["y", "#B39F7A"]
-).createSlider();
+const imagesArray = [
+  "./img/catOnBed.jpg",
+  "./img/catOnBlanket.jpg",
+  "./img/catOnBlanket2.jpg",
+  "./img/catInBag.jpg",
+  "./img/catOnCarpet.jpg",
+  "./img/catOnFloor.jpg",
+];
+
+const sliderOptions = {
+  arrImgs: imagesArray,
+  sizeSlider: [300, 500],
+  margin: 16,
+  clickToSlide: "n",
+  progressDots: "y",
+  bgColor: ["y", "#B39F7A"],
+};
+
+new Slider(".slider", sliderOptions).createSlider();

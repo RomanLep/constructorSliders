@@ -38,14 +38,21 @@ class Slider {
   }
 
   getImg(containerSlider) {
+    const containerWrapper = document.createElement('div')
     const containerImg = document.createElement("div");
     containerImg.id = "container-img";
 
-    Object.assign(containerImg.style, {
+
+    Object.assign(containerWrapper.style, {
       height: this.heightSlider + "px",
       width: this.widthSlider + "px",
-      display: "flex",
       overflow: "hidden",
+    });
+
+    Object.assign(containerImg.style, {
+      height: "100%",
+      width: "100%",
+      display: "flex",
       transition: "transform 0.3s ease",
       userSelect: "none",
     });
@@ -67,10 +74,10 @@ class Slider {
           containerImg.style.cursor = "pointer";
         }
       }
-
       containerImg.append(img);
     }
 
+    containerWrapper.append(containerImg);
     containerSlider.append(containerImg);
     this.sliderTrack = containerImg;
   }
